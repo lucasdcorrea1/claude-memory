@@ -16,15 +16,17 @@ Claude Code loses all context when a conversation ends. **claude-memory** fixes 
 ```
 You open a project in Claude Code
         ↓
-Claude checks for MEMORY.md → creates one if missing (or restores from archive)
+PreToolUse hook detects empty MEMORY.md → initializes it (or restores from archive)
+        ↓
+Claude reads MEMORY.md and picks up project context automatically
         ↓
 During work, Claude updates MEMORY.md with state, decisions, paths
         ↓
-Next session, Claude reads MEMORY.md and picks up where you left off
+Stop hook saves a snapshot when the conversation ends
         ↓
 After 7+ days of inactivity, MEMORY.md is archived (saves tokens)
         ↓
-Reopen the project → archived memory is auto-restored
+Reopen the project → hook auto-restores archived memory
 ```
 
 ## Installation
@@ -56,7 +58,10 @@ cd claude-memory
 1. Copies scripts to `~/.claude/tools/claude-memory/`
 2. Creates `~/.claude/archive/` directory
 3. Adds context preservation rules to `~/.claude/CLAUDE.md` (safe merge, won't overwrite existing rules)
-4. Creates a daily scheduled task to archive stale memory files (optional)
+4. Registers Claude Code hooks in `~/.claude/settings.json`:
+   - **PreToolUse**: auto-initializes empty MEMORY.md or restores from archive
+   - **Stop**: saves a snapshot when the conversation ends
+5. Creates a daily scheduled task to archive stale memory files (optional)
 
 ## Uninstallation
 
@@ -109,7 +114,8 @@ pwsh -File "$scripts\cleanup-contexts.ps1" -Project "my-project" -Keep 10
 │       ├── list-contexts.ps1
 │       ├── cleanup-contexts.ps1
 │       ├── init-project.ps1
-│       └── auto-save-hook.ps1
+│       ├── init-memory-hook.ps1          # PreToolUse hook (auto-init)
+│       └── auto-save-hook.ps1            # Stop hook (auto-save)
 ├── projects/                              # Active memory (loaded by Claude Code)
 │   ├── D--Development-my-app/
 │   │   └── memory/

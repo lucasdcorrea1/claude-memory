@@ -2,13 +2,14 @@
 Follow these rules in EVERY session to maintain continuity across conversations:
 
 ### Session Start (Auto-Initialization)
-- Check if the project's MEMORY.md is loaded in the system context
-- If MEMORY.md **exists**: read it, acknowledge current state if the user asks to continue
-- If MEMORY.md **does NOT exist**:
+- A `PreToolUse` hook automatically initializes MEMORY.md when it is empty or restores it from archive
+- If you see a `[claude-memory]` message from the hook, **read the MEMORY.md file immediately** to load the project context
+- If MEMORY.md **has content** in the system prompt: use it as context, acknowledge current state if the user asks to continue
+- If MEMORY.md **is empty** in the system prompt and no hook message appeared:
   1. Derive the `<project>` key: take the primary working directory, replace `:` `\` `/` with `-`
      - Example: `D:\Development\my-app` → `D--Development-my-app`
   2. Check for an archived version at `~/.claude/archive/<project>/MEMORY.md`
-  3. If **archived version exists**: restore it by moving (copy then delete) from `archive/<project>/` back to `projects/<project>/memory/MEMORY.md`, then read it and continue normally
+  3. If **archived version exists**: restore it (copy then delete) from `archive/<project>/` back to `projects/<project>/memory/MEMORY.md`, then read it
   4. If **no archived version**: create a new MEMORY.md using the template below at `~/.claude/projects/<project>/memory/MEMORY.md`
 - This ensures context tracking works automatically in ANY project without manual setup
 

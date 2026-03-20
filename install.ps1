@@ -26,6 +26,7 @@ $claudeDir = Join-Path $env:USERPROFILE ".claude"
 $toolsDir = Join-Path $claudeDir "tools" "claude-memory"
 $archiveDir = Join-Path $claudeDir "archive"
 $claudeMd = Join-Path $claudeDir "CLAUDE.md"
+$settingsJson = Join-Path $claudeDir "settings.json"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 Write-Host ""
@@ -40,7 +41,7 @@ if ((Test-Path $toolsDir) -and -not $Force) {
 }
 
 # --- Copy scripts ---
-Write-Host "[1/4] Installing scripts..." -ForegroundColor White
+Write-Host "[1/5] Installing scripts..." -ForegroundColor White
 
 if (-not (Test-Path $toolsDir)) {
     New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
@@ -56,7 +57,7 @@ Copy-Item -Path "$scriptsSource\*" -Destination $toolsDir -Force -Recurse
 Write-Host "  Scripts installed to: $toolsDir" -ForegroundColor Green
 
 # --- Create archive directory ---
-Write-Host "[2/4] Setting up archive directory..." -ForegroundColor White
+Write-Host "[2/5] Setting up archive directory..." -ForegroundColor White
 
 if (-not (Test-Path $archiveDir)) {
     New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
@@ -67,7 +68,7 @@ if (-not (Test-Path $archiveDir)) {
 
 # --- Merge CLAUDE.md ---
 if (-not $NoClaude) {
-    Write-Host "[3/4] Configuring CLAUDE.md..." -ForegroundColor White
+    Write-Host "[3/5] Configuring CLAUDE.md..." -ForegroundColor White
 
     $templateFile = Join-Path $scriptDir "templates" "CLAUDE-global.md"
     if (-not (Test-Path $templateFile)) {
@@ -95,12 +96,106 @@ if (-not $NoClaude) {
         }
     }
 } else {
-    Write-Host "[3/4] Skipping CLAUDE.md configuration (--NoClaude)" -ForegroundColor Gray
+    Write-Host "[3/5] Skipping CLAUDE.md configuration (--NoClaude)" -ForegroundColor Gray
 }
+
+# --- Configure hooks in settings.json ---
+Write-Host "[4/5] Configuring Claude Code hooks..." -ForegroundColor White
+
+$initHookScript = Join-Path $toolsDir "init-memory-hook.ps1"
+$saveHookScript = Join-Path $toolsDir "auto-save-hook.ps1"
+
+$initHookCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$initHookScript`""
+$saveHookCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$saveHookScript`""
+
+if (Test-Path $settingsJson) {
+    $settings = Get-Content -Path $settingsJson -Raw | ConvertFrom-Json
+} else {
+    $settings = [PSCustomObject]@{}
+}
+
+# Ensure hooks object exists
+if (-not $settings.PSObject.Properties["hooks"]) {
+    $settings | Add-Member -NotePropertyName "hooks" -NotePropertyValue ([PSCustomObject]@{})
+}
+
+# Configure PreToolUse hook (auto-init MEMORY.md)
+$preToolUseHook = [PSCustomObject]@{
+    matcher = ""
+    hooks = @(
+        [PSCustomObject]@{
+            type = "command"
+            command = $initHookCmd
+            timeout = 5
+        }
+    )
+}
+
+$needsPreToolUse = $true
+if ($settings.hooks.PSObject.Properties["PreToolUse"]) {
+    # Check if our hook is already registered
+    foreach ($entry in $settings.hooks.PreToolUse) {
+        foreach ($h in $entry.hooks) {
+            if ($h.command -like "*init-memory-hook*") {
+                $needsPreToolUse = $false
+                break
+            }
+        }
+    }
+}
+
+if ($needsPreToolUse) {
+    if (-not $settings.hooks.PSObject.Properties["PreToolUse"]) {
+        $settings.hooks | Add-Member -NotePropertyName "PreToolUse" -NotePropertyValue @($preToolUseHook)
+    } else {
+        $settings.hooks.PreToolUse = @($settings.hooks.PreToolUse) + @($preToolUseHook)
+    }
+    Write-Host "  Added PreToolUse hook (auto-init MEMORY.md)" -ForegroundColor Green
+} else {
+    Write-Host "  PreToolUse hook already registered. Skipping." -ForegroundColor Gray
+}
+
+# Configure Stop hook (auto-save snapshot)
+$stopHook = [PSCustomObject]@{
+    matcher = ""
+    hooks = @(
+        [PSCustomObject]@{
+            type = "command"
+            command = $saveHookCmd
+            timeout = 10
+        }
+    )
+}
+
+$needsStop = $true
+if ($settings.hooks.PSObject.Properties["Stop"]) {
+    foreach ($entry in $settings.hooks.Stop) {
+        foreach ($h in $entry.hooks) {
+            if ($h.command -like "*auto-save-hook*") {
+                $needsStop = $false
+                break
+            }
+        }
+    }
+}
+
+if ($needsStop) {
+    if (-not $settings.hooks.PSObject.Properties["Stop"]) {
+        $settings.hooks | Add-Member -NotePropertyName "Stop" -NotePropertyValue @($stopHook)
+    } else {
+        $settings.hooks.Stop = @($settings.hooks.Stop) + @($stopHook)
+    }
+    Write-Host "  Added Stop hook (auto-save snapshot)" -ForegroundColor Green
+} else {
+    Write-Host "  Stop hook already registered. Skipping." -ForegroundColor Gray
+}
+
+$settings | ConvertTo-Json -Depth 10 | Set-Content -Path $settingsJson -Encoding UTF8
+Write-Host "  Settings saved to: $settingsJson" -ForegroundColor Cyan
 
 # --- Scheduled Task ---
 if (-not $NoScheduledTask) {
-    Write-Host "[4/4] Setting up scheduled task..." -ForegroundColor White
+    Write-Host "[5/5] Setting up scheduled task..." -ForegroundColor White
 
     $taskName = "Claude-ArchiveStaleMemory"
     $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -127,7 +222,7 @@ if (-not $NoScheduledTask) {
         }
     }
 } else {
-    Write-Host "[4/4] Skipping scheduled task (--NoScheduledTask)" -ForegroundColor Gray
+    Write-Host "[5/5] Skipping scheduled task (--NoScheduledTask)" -ForegroundColor Gray
 }
 
 # --- Done ---
