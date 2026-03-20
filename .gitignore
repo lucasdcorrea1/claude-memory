@@ -1,0 +1,11 @@
+# Personal data - never commit
+MEMORY.md
+!templates/memory-template.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
